@@ -109,7 +109,6 @@ endgenerate
 /*
 -----------------------------------------------------
  Output rounding calculations for 5 stages 
-
  sample rate (ksps)  decimation 	 bit growth
   48                  16            34-14 = 20
   96                   8            29-14 = 15
@@ -210,5 +209,3 @@ endgenerate
 
 
 endmodule
-
-  

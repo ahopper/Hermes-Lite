@@ -34,21 +34,22 @@ module receiver(
   input [5:0] rate,             //48k....384k
   input [31:0] frequency,
   output out_strobe,
-  input signed [11:0] in_data,
+  input signed [15:0] in_data,
   output [23:0] out_data_I,
-  output [23:0] out_data_Q,
-  output signed [17:0] cordic_outdata_I,	// make cordic data available for VNA_SCAN_FPGA
-  output signed [17:0] cordic_outdata_Q
+  output [23:0] out_data_Q
   );
 
   parameter CICRATE;
+
+wire signed [21:0] cordic_outdata_I;
+wire signed [21:0] cordic_outdata_Q;
 
 // gain adjustment, Hermes reduced by 6dB to match previous receiver code.
 // Hermes-Lite gain reduced to calibrate QtRadio
 wire signed [23:0] out_data_I2;
 wire signed [23:0] out_data_Q2;
-assign out_data_I = out_data_I2; //>>> 3);
-assign out_data_Q = out_data_Q2; //>>> 3);
+assign out_data_I = out_data_I2 >>> 1;
+assign out_data_Q = out_data_Q2 >>> 1;
 
 
 //------------------------------------------------------------------------------
@@ -66,16 +67,16 @@ cordic cordic_inst(
   
 // Receive CIC filters followed by FIR filter
 wire decimA_avail, decimB_avail;
-wire signed [13:0] decimA_real, decimA_imag;
-wire signed [15:0] decimB_real, decimB_imag;
+wire signed [17:0] decimA_real, decimA_imag;
+wire signed [17:0] decimB_real, decimB_imag;
 
-localparam VARCICWIDTH = (CICRATE == 10) ? 34 : (CICRATE == 13) ? 34 : (CICRATE == 5) ? 41 : 37; // Last is default rate of 8
-localparam ACCWIDTH = (CICRATE == 10) ? 28 : (CICRATE == 13) ? 30 : (CICRATE == 5) ? 25 : 27; // Last is default rate of 8
+localparam VARCICWIDTH = (CICRATE == 10) ? 45 : (CICRATE == 13) ? 34 : (CICRATE == 5) ? 41 : 45; // Last is default rate of 8
+localparam ACCWIDTH = (CICRATE == 10) ? 31 : (CICRATE == 13) ? 30 : (CICRATE == 5) ? 25 : 31; // Last is default rate of 8
 
 
 // CIC filter 
 //I channel
-cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(18), .ACC_WIDTH(ACCWIDTH), .OUT_WIDTH(14))      
+cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(22), .ACC_WIDTH(ACCWIDTH), .OUT_WIDTH(18))      
   cic_inst_I2(
     .clock(clock),
     .in_strobe(1'b1),
@@ -85,7 +86,7 @@ cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(18), .ACC_WIDTH(ACCWIDTH), .OU
     );
 
 //Q channel
-cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(18), .ACC_WIDTH(ACCWIDTH), .OUT_WIDTH(14))  
+cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(22), .ACC_WIDTH(ACCWIDTH), .OUT_WIDTH(18))  
   cic_inst_Q2(
     .clock(clock),
     .in_strobe(1'b1),
@@ -97,7 +98,7 @@ cic #(.STAGES(3), .DECIMATION(CICRATE), .IN_WIDTH(18), .ACC_WIDTH(ACCWIDTH), .OU
 
 //  Variable CIC filter - in width = out width = 14 bits, decimation rate = 2 to 16 
 //I channel
-varcic #(.STAGES(5), .IN_WIDTH(14), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CICRATE(CICRATE))
+varcic #(.STAGES(5), .IN_WIDTH(18), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(18), .CICRATE(CICRATE))
   varcic_inst_I1(
     .clock(clock),
     .in_strobe(decimA_avail),
@@ -108,7 +109,7 @@ varcic #(.STAGES(5), .IN_WIDTH(14), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CI
     );
 
 //Q channel
-varcic #(.STAGES(5), .IN_WIDTH(14), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CICRATE(CICRATE))
+varcic #(.STAGES(5), .IN_WIDTH(18), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(18), .CICRATE(CICRATE))
   varcic_inst_Q1(
     .clock(clock),
     .in_strobe(decimA_avail),
@@ -118,6 +119,6 @@ varcic #(.STAGES(5), .IN_WIDTH(14), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(16), .CI
     .out_data(decimB_imag)
     );
 				
-firX8R8 fir2 (clock, decimB_avail, {{2{decimB_real[15]}},decimB_real}, {{2{decimB_imag[15]}},decimB_imag}, out_strobe, out_data_I2, out_data_Q2);
+firX8R8 fir2 (clock, decimB_avail, decimB_real, decimB_imag, out_strobe, out_data_I2, out_data_Q2);
 
 endmodule

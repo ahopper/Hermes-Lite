@@ -17,9 +17,8 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 // (C) Phil Harman VK6APH, Kirk Weedman KD7IRS  2006, 2007, 2008, 2009, 2010, 2011, 2012, 2013, 2014 
-// (C) Steve Haynal KF7O 2014, 2015, 2016
+// (C) Steve Haynal KF7O 2014, 2015
 
-// New VNA mode added by James C. Ahlstrom, N2ADR, 1 December 2016
 
 // This is a port of the Hermes project from www.openhpsdr.org to work with
 // the Hermes-Lite hardware described at http://github.com/softerhardware/Hermes-Lite.
@@ -126,7 +125,7 @@ localparam GBITS = (CLK_FREQ == 61440000) ? 30 : (CLK_FREQ == 79872000) ? 31 : (
 localparam RRRR = (CLK_FREQ == 61440000) ? 160 : (CLK_FREQ == 79872000) ? 208 : (CLK_FREQ == 76800000) ? 200 : 192;
 
 
-// VNA Settings for VNA_SCAN_PC
+// VNA Settings
 localparam VNATXGAIN = 6'h10;
 localparam DUPRXMAXGAIN = 6'h12;
 localparam DUPRXMINGAIN = 6'h06;
@@ -147,7 +146,7 @@ wire FPGA_PTT;
 parameter M_TPD   = 4;
 parameter IF_TPD  = 2;
 
-parameter  Hermes_serialno = 8'd32;     // Serial number of this version
+parameter  Hermes_serialno = 8'd31;     // Serial number of this version
 localparam Penny_serialno = 8'd00;      // Use same value as equ1valent Penny code 
 localparam Merc_serialno = 8'd00;       // Use same value as equivalent Mercury code
 
@@ -277,7 +276,7 @@ localparam bit [0:19][8:0] initarray_regular = {
 };
 
 
-localparam disable_IAMP = 1'b1; 
+localparam disable_IAMP = 1'b0; 
 localparam bit [0:19][8:0] initarray0 = (disable_IAMP == 1) ? initarray_disable_IAMP : initarray_regular;
 
 
@@ -464,7 +463,14 @@ wire have_sp_data;
 SP_fifo  SPF (.aclr(C122_rst | !run), .wrclk (AD9866clkX1), .rdclk(Tx_clock_2), 
              .wrreq (sp_fifo_wrreq), .data ({{4{temp_ADC[11]}},temp_ADC}), .rdreq (sp_fifo_rdreq),
              .q(sp_fifo_rddata), .wrfull(sp_fifo_wrfull), .wrempty(sp_fifo_wrempty));                    
-                     
+
+// test to feed back corrected 16 bit adc values				 
+//SP_fifo  SPF (.aclr(C122_rst | !run), .wrclk (AD9866clkX1), .rdclk(Tx_clock_2), 
+//             .wrreq (sp_fifo_wrreq), .data (adcpipe[0]), .rdreq (sp_fifo_rdreq),
+//             .q(sp_fifo_rddata), .wrfull(sp_fifo_wrfull), .wrempty(sp_fifo_wrempty));                    
+
+
+				 
                      
 sp_rcv_ctrl SPC (.clk(AD9866clkX1), .reset(C122_rst), .sp_fifo_wrempty(sp_fifo_wrempty),
                  .sp_fifo_wrfull(sp_fifo_wrfull), .write(sp_fifo_wrreq), .have_sp_data(have_sp_data));  
@@ -634,7 +640,7 @@ always @(posedge ad9866_rxclk)
     begin
         if (iad9866_txsync) begin
             iad9866_txsync <= 1'b0;
-            ad9866_tx_stage <= ( (FPGA_PTT | VNA_SCAN_PC) ? DACDp : 12'b000);
+            ad9866_tx_stage <= ( (FPGA_PTT | VNA) ? DACDp : 12'b000);
         end else begin
             iad9866_txsync <= 1'b1;
         end
@@ -649,7 +655,7 @@ always @(posedge ad9866_rxclk)
         ad9866_txsyncr <= iad9866_txsync;
     end 
 
-assign ad9866_txquietn = (FPGA_PTT | VNA_SCAN_PC); //1'b0;
+assign ad9866_txquietn = (FPGA_PTT | VNA); //1'b0;
 assign ad9866_tx = ad9866_txr;
 assign ad9866_txsync = ad9866_txsyncr;
 
@@ -709,7 +715,7 @@ always @ (posedge AD9866clkX1)
             4'hd : temp_ADC = 12'h07f;
             4'he : temp_ADC = 12'h061;
             4'hf : temp_ADC = 12'h035;
-        endcase
+       endcase
     end
     incnt <= incnt + 4'h1; 
   end 
@@ -855,12 +861,22 @@ wire         [47:0] IF_IQ_Data;
 wire             test_strobe3;
 
 // Pipeline for adc fanout
-reg [11:0] adcpipe [0:3];
+// adc linearize
+//reg [11:0] adcpipe [0:3];
+reg [15:0] adcpipe [0:3];
+
+reg [15:0] adcCorrection[0:4095];
+
 always @ (posedge AD9866clkX1) begin
-    adcpipe[0] <= temp_ADC;
-    adcpipe[1] <= temp_ADC;
-    adcpipe[2] <= temp_ADC;
-    adcpipe[3] <= temp_ADC;
+ //   adcpipe[0] <= temp_ADC<<<4;
+ //   adcpipe[1] <= temp_ADC<<<4;
+ //   adcpipe[2] <= temp_ADC<<<4;
+ //   adcpipe[3] <= temp_ADC<<<4;
+ 
+ adcpipe[0] <= adcCorrection[temp_ADC];
+ adcpipe[1] <= adcCorrection[temp_ADC];
+ adcpipe[2] <= adcCorrection[temp_ADC];
+ adcpipe[3] <= adcCorrection[temp_ADC];
 end
 
 
@@ -881,77 +897,9 @@ end
         endcase
     end 
 
-// This firmware supports two VNA modes: scanning by the PC (original method) and scanning in the FPGA.
-// The VNA bit must be turned on for either.  So VNA is one for either method, and zero otherwise.
-// The scan method depends on the number of VNA scan points, IF_VNA_count.  This is zero for the original method.
-wire VNA_SCAN_PC   = VNA & (IF_VNA_count == 0);
-wire VNA_SCAN_FPGA = VNA & (IF_VNA_count != 0);
-
-wire signed [17:0] cordic_data_I, cordic_data_Q;
-wire [31:0] rx0_frequency;
-wire vna_strobe, rx0_strobe;
-wire signed [23:0] vna_out_I, vna_out_Q, rx0_out_I, rx0_out_Q;
-wire [15:0] C122_VNA_count;
-wire C122_VNA_bit;
-
-assign rx0_frequency = VNA ? C122_phase_word_Tx : C122_sync_phase_word[0];
-assign strobe[0] = VNA_SCAN_FPGA ? vna_strobe : rx0_strobe;
-assign rx_I[0] = VNA_SCAN_FPGA ? vna_out_I : rx0_out_I;
-assign rx_Q[0] = VNA_SCAN_FPGA ? vna_out_Q : rx0_out_Q;
-
-cdc_sync #(16)
-    vna_cnt  (.siga(IF_VNA_count), .rstb(C122_rst), .clkb(AD9866clkX1), .sigb(C122_VNA_count));
-
-cdc_sync #(1)
-    vna_bit  (.siga(VNA), .rstb(C122_rst), .clkb(AD9866clkX1), .sigb(C122_VNA_bit));
-
-vna_scanner #(.CICRATE(CICRATE), .RATE48(RATE48)) rx_vna (	// use this output for VNA_SCAN_FPGA
-    //control
-    .clock(AD9866clkX1),
-    .freq_delta(C122_sync_phase_word[0]),
-    .output_strobe(vna_strobe),
-    //input
-    .cordic_data_I(cordic_data_I),
-    .cordic_data_Q(cordic_data_Q),
-    //output
-    .out_data_I(vna_out_I),
-    .out_data_Q(vna_out_Q),
-    // VNA mode data
-    .vna(C122_VNA_bit),
-    .Tx_frequency_in(C122_sync_phase_word_Tx),
-    .Tx_frequency_out(C122_phase_word_Tx),
-    .vna_count(C122_VNA_count)
-    );
-
-// create the first receiver
-
-cdc_mcp #(48)           // Transfer the receiver data and strobe from AD9866clkX1 to IF_clk
-        IQ_sync0 (.a_data ({rx_I[0], rx_Q[0]}), .a_clk(AD9866clkX1),.b_clk(IF_clk), .a_data_rdy(strobe[0]),
-                .a_rst(C122_rst), .b_rst(IF_rst), .b_data(IF_M_IQ_Data[0]), .b_data_ack(IF_M_IQ_Data_rdy[0]));
-
-// transfer Rx1 frequency to the receiver clock AD9866clkX1
-cdc_sync #(32)
-        freqRx0 (.siga(IF_frequency[1]), .rstb(C122_rst), .clkb(AD9866clkX1), .sigb(C122_frequency_HZ[0]));
-assign C122_sync_phase_word[0] = C122_frequency_HZ[0];
-
-receiver #(.CICRATE(CICRATE)) receiver_inst0 (	// This first receiver is used for transceiver and VNA_SCAN_PC.
-    //control
-    .clock(AD9866clkX1),
-    .rate(rate),
-    .frequency(rx0_frequency),
-    .out_strobe(rx0_strobe),
-    //input
-    .in_data(adcpipe[0]),
-    //output
-    .out_data_I(rx0_out_I),
-    .out_data_Q(rx0_out_Q),
-    .cordic_outdata_I(cordic_data_I),
-    .cordic_outdata_Q(cordic_data_Q)
-    );
-
 genvar c;
-generate	// generate the receivers after the first
-  for (c = 1; c < NR; c = c + 1) // calc freq phase word for 4 freqs (Rx1, Rx2, Rx3, Rx4)
+generate
+  for (c = 0; c < NR; c = c + 1) // calc freq phase word for 4 freqs (Rx1, Rx2, Rx3, Rx4)
    begin: MDC 
     //  assign C122_ratio[c] = C122_frequency_HZ[c] * M2; // B0 * B57 number = B57 number
 
@@ -1162,7 +1110,8 @@ wire signed [31:0] C122_phase_word_Tx;
 wire signed [15:0] I;
 wire signed [15:0] Q;
 
-// If in either VNA mode, transmit a sine wave.
+// if in VNA mode use the Rx[0] phase word for the Tx
+assign C122_phase_word_Tx = VNA ? C122_sync_phase_word[0] : C122_sync_phase_word_Tx;
 assign                  I = VNA ? 16'd19274 : (cwkey ? {1'b0, C122_cwlevel} : y2_i);    // select VNA mode if active. Set CORDIC for max DAC output
 assign                  Q = (VNA | cwkey) ? 0 : y2_r;                   // taking into account CORDICs gain i.e. 0x7FFF/1.7
 
@@ -1400,7 +1349,7 @@ assign RX_USED = {IF_Rx_fifo_full,IF_Rx_fifo_used};
 
 assign Penny_ALC = AIN5; 
 
-wire VNA_start = VNA_SCAN_PC && IF_Rx_save && (IF_Rx_ctrl_0[7:1] == 7'b0000_001);  // indicates a frequency change for the VNA.
+wire VNA_start = VNA && IF_Rx_save && (IF_Rx_ctrl_0[7:1] == 7'b0000_001);  // indicates a frequency change for the VNA.
 
 
 wire IO4;
@@ -1715,7 +1664,6 @@ reg         Hermes_atten_enable; // enable/disable bit for Hermes attenuator
 reg         TR_relay_disable;       // Alex T/R relay disable option
 reg         IF_Pure_signal;              // 
 reg   [3:0]  IF_Predistortion;              // 
-reg  [15:0] IF_VNA_count;			// number of points when the FPGA scans the VNA frequencies
 
 always @ (posedge IF_clk)
 begin 
@@ -1756,7 +1704,6 @@ begin
      Hermes_atten_enable <= 1'b0;       // default disable Hermes attenuator
      IF_Pure_signal      <= 1'b0;      // default disable pure signal
      IF_Predistortion    <= 4'b0000;   // default disable predistortion
-     IF_VNA_count       <= 16'd0;		// number of points when the FPGA scans the VNA frequencies
     
   end
   else if (IF_Rx_save)                  // all Rx_control bytes are ready to be saved
@@ -1796,7 +1743,6 @@ begin
       Alex_6m_preamp      <= IF_Rx_ctrl_3[6];       // 6M low noise amplifier (0 = disable, 1 = enable)
       TR_relay_disable  <= IF_Rx_ctrl_3[7];     // Alex T/R relay disable option (0=TR relay enabled, 1=TR relay disabled)
       Alex_manual_LPF     <= IF_Rx_ctrl_4[6:0];     // Alex LPF filters select    
-      IF_VNA_count <= {IF_Rx_ctrl_3, IF_Rx_ctrl_4};			// number of points when the FPGA scans the VNA frequencies
     end
     if (IF_Rx_ctrl_0[7:1] == 7'b0001_010)
     begin
@@ -1911,7 +1857,7 @@ always @(posedge AD9866clkX1) begin
 //assign ad9866_pga = (FPGA_PTT | VNA) ? ((VNA & Preamp) ? DUPRXMAXGAIN : DUPRXMINGAIN) : (IF_RAND ? agc_value : gain_value);
 //allow gain changes during tx
 //AD9866 appears to diminish TX if RX gain is more than 1f, ceiling of 1f for receiver if in TX
-	ad9866_pga_d <= VNA_SCAN_PC ? (Preamp ? DUPRXMAXGAIN : DUPRXMINGAIN) : ((FPGA_PTT & igain_value[5]) ? 6'h1f : igain_value);
+	ad9866_pga_d <= VNA ? (Preamp ? DUPRXMAXGAIN : DUPRXMINGAIN) : ((FPGA_PTT & igain_value[5]) ? 6'h1f : igain_value);
 `else
 	ad9866_pga_d <= igain_value;
 `endif
@@ -1938,7 +1884,7 @@ assign ad9866_pga = ad9866_pga_d;
 reg   [2:0] IF_PWM_state;      // state for PWM
 reg   [2:0] IF_PWM_state_next; // next state for PWM
 reg  [15:0] IF_Left_Data;      // Left 16 bit PWM data for D/A converter
-//reg  [15:0] IF_Right_Data;     // Right 16 bit PWM data for D/A converter
+reg  [15:0] IF_Right_Data;     // Right 16 bit PWM data for D/A converter
 reg  [15:0] IF_I_PWM;          // I 16 bit PWM data for D/A conveter
 reg  [15:0] IF_Q_PWM;          // Q 16 bit PWM data for D/A conveter
 wire        IF_get_samples;
@@ -2002,10 +1948,27 @@ begin
   else
     IF_PWM_state   <= #IF_TPD IF_PWM_state_next;
 
+	 
+	  // get Left audio
+  if (IF_PWM_state == PWM_LEFT)
+    IF_Left_Data   <= #IF_TPD IF_Rx_fifo_rdata;
+
+  // get Right audio
+  if (IF_PWM_state == PWM_RIGHT)
+  begin
+    IF_Right_Data  <= #IF_TPD IF_Rx_fifo_rdata;
+            
+    end
+	 
+	 
   // get I audio
   if (IF_PWM_state == PWM_I_AUDIO)
+  begin
     IF_I_PWM       <= #IF_TPD IF_Rx_fifo_rdata;
-
+//	 if(IF_Left_Data[13] )
+   	 adcCorrection[IF_Left_Data[11:0]]<= IF_Right_Data;
+ 
+	end
   // get Q audio
   if (IF_PWM_state == PWM_Q_AUDIO)
     IF_Q_PWM       <= #IF_TPD IF_Rx_fifo_rdata;
@@ -2157,8 +2120,8 @@ wire [5:0] dd;
 // Linear mapping from 0to255 to 0to39
 `ifdef FULLDUPLEX
 generate
-	if (disable_IAMP == 1) assign dd = VNA_SCAN_PC ? VNATXGAIN : {2'b00,IF_Drive_Level[7:4]};
-	else assign dd = VNA_SCAN_PC ? VNATXGAIN : ((IF_Drive_Level+4) >> 3) + (IF_Drive_Level >> 5);
+	if (disable_IAMP == 1) assign dd = VNA ? VNATXGAIN : {2'b00,IF_Drive_Level[7:4]};
+	else assign dd = VNA ? VNATXGAIN : ((IF_Drive_Level+4) >> 3) + (IF_Drive_Level >> 5);
 endgenerate
 `else
 generate

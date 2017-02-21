@@ -26,7 +26,7 @@ Boston, MA  02110-1301, USA.
 
 module cordic( clock, frequency, in_data, out_data_I, out_data_Q );
 
-parameter IN_WIDTH   = 12; //ADC bitwidth
+parameter IN_WIDTH   = 16; //ADC bitwidth
 parameter EXTRA_BITS = 5;  //spur reduction 6 dB per bit
 
 //internal params
@@ -136,11 +136,8 @@ always @(posedge clock)
   //subtract quadrant and Pi/4 from the angle
   Z[0] <= {~phase[WP-3], ~phase[WP-3], phase[WP-4:WP-WZ-1]};
 
-  if (frequency == 1'b0)
-    phase <= 1'b0;
-  else
-    //advance NCO
-    phase <= phase + frequency;
+  //advance NCO
+  phase <= phase + frequency;
   end
 
 
