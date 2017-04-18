@@ -70,8 +70,8 @@ wire decimA_avail, decimB_avail;
 wire signed [17:0] decimA_real, decimA_imag;
 wire signed [17:0] decimB_real, decimB_imag;
 
-localparam VARCICWIDTH = (CICRATE == 10) ? 45 : (CICRATE == 13) ? 34 : (CICRATE == 5) ? 41 : 45; // Last is default rate of 8
-localparam ACCWIDTH = (CICRATE == 10) ? 31 : (CICRATE == 13) ? 30 : (CICRATE == 5) ? 25 : 31; // Last is default rate of 8
+localparam VARCICWIDTH = (CICRATE == 10) ? 38 : (CICRATE == 13) ? 34 : (CICRATE == 5) ? 41 : 45; // Last is default rate of 8
+localparam ACCWIDTH = (CICRATE == 10) ? 32 : (CICRATE == 13) ? 30 : (CICRATE == 5) ? 25 : 31; // Last is default rate of 8
 
 
 // CIC filter 
@@ -119,6 +119,6 @@ varcic #(.STAGES(5), .IN_WIDTH(18), .ACC_WIDTH(VARCICWIDTH), .OUT_WIDTH(18), .CI
     .out_data(decimB_imag)
     );
 				
-firX8R8 fir2 (clock, decimB_avail, decimB_real, decimB_imag, out_strobe, out_data_I2, out_data_Q2);
+firX8R8 #(.ABITS(25)) fir2 (clock, decimB_avail, decimB_real, decimB_imag, out_strobe, out_data_I2, out_data_Q2);
 
 endmodule

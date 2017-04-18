@@ -62,7 +62,7 @@ module firX8R8 (
 	
 	parameter
 		TAPS 			= NTAPS / 8,				// Must be even by 8
-   		ABITS			= 24,							// adder bits
+   	ABITS			= 24,							// adder bits
 		OBITS			= 24,							// output bits
 		NTAPS			= 976;						// number of filter taps, even by 8	
 	
@@ -79,8 +79,10 @@ module firX8R8 (
 // However, since we decimate by 8 the output will be 1/8 the input. Hence we 
 // use 24 bits for the Accumulators. 
 
-	assign y_real = Racc[ABITS-1:0];  
-	assign y_imag = Iacc[ABITS-1:0];
+	assign y_real = Racc[ABITS-1:ABITS-OBITS];  
+	assign y_imag = Iacc[ABITS-1:ABITS-OBITS];
+	//assign y_real = Racc[OBITS-1:0];  
+	//assign y_imag = Iacc[OBITS-1:0];
 	
 	initial
 	begin
@@ -224,13 +226,14 @@ module fir256(
 					//if (fir_step)
 					//begin
 						Rmult <= q_real * reg_coef;
-						Raccum <= Raccum + Rmult[35:12] + Rmult[11];  // truncate 36 bits down to 24 bits to prevent DC spur
+						Raccum <= Raccum + {{(ABITS-24){Rmult[35]}},Rmult[35:12]} + Rmult[11];  // truncate 36 bits down to 24 bits to prevent DC spur
+				//		Raccum <= Raccum + Rmult[36:37-ABITS] + Rmult[36-ABITS];  // truncate 36 bits down to 24 bits to prevent DC spur
 						//fir_step <= 1'b0;
 					//end
 					//else 
 					//begin
 						Imult <= q_imag * reg_coef;
-						Iaccum <= Iaccum + Imult[35:12] + Imult[11];
+						Iaccum <= Iaccum + {{(ABITS-24){Imult[35]}},Imult[35:12]} + Imult[11];
 						//fir_step <= 1'b1;
 					//end
 				end
